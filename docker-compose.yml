@@ -1,0 +1,18 @@
+services:
+  nav:
+    image: node:22-alpine
+    container_name: nav_rennesdev
+    working_dir: /app
+    command: node /app/server.js
+    volumes:
+      - ./app:/app:ro
+    ports:
+      - "127.0.0.1:8086:8086"
+    mem_limit: 256m
+    restart: unless-stopped
+    networks:
+      - apps
+
+networks:
+  apps:
+    external: true
