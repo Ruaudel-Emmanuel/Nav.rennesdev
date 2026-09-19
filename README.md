@@ -5,7 +5,7 @@ Service web sur **https://nav.rennesdev.fr** : un « navigateur » minimaliste o
 ## Feuille de route
 
 - **v1 (ceci)** : navigateur simple et léger. Le contenu des pages passe par le serveur.
-- **v2 (à venir, branche dédiée)** : **assistant IA intégré** (bouton « Demander à l'IA ») — résumé / Q&A sur la page affichée via API ou LLM local (Ollama). Comme la page est déjà côté VPS, l'IA la lit **directement** : plus besoin de copier-coller (c'est la limite d'ÉCLAIREUR que Nav corrige). ÉCLAIREUR devient le moteur interne de la v2.
+- **v2 (branche `v2-assistant-ia`, 19/09) : assistant IA intégré** ✅ — bouton **🤖 IA** dans la barre du lecteur → panneau « Résumer la page » / question libre → réponse de **qwen2.5:3b en local** (Ollama, réseau Docker `apps`). La page est lue **côté serveur** (cache mémoire 15 min) : l'IA voit directement le contenu, plus besoin de copier-coller — c'est la limite d'ÉCLAIREUR que Nav corrige. `keep_alive: 0` → le modèle se décharge de la RAM après chaque réponse. Toute l'IA tourne sur le VPS, aucune donnée n'est envoyée sur Internet.
 
 ## Architecture
 
@@ -28,6 +28,15 @@ Service web sur **https://nav.rennesdev.fr** : un « navigateur » minimaliste o
 - images conservées (chargées directement par le navigateur du client, URL absolues)
 - sélection du contenu : `<article>` sinon `<main>` sinon `<body>` ; titre extrait pour l'historique
 - charset géré (header HTTP + meta, fallback utf-8)
+
+### Endpoint IA (v2, branche `v2-assistant-ia`)
+
+- `POST /ia` `{url, question?}` → `{modele, reponse}` ou `{error}` (HTTP 200)
+- la page est récupérée du **cache mémoire** (rempli par `/go`) ou téléchargée à la volée
+- texte extrait : 2500 caractères max (tronqué), charset géré
+- Ollama `http://ollama:11434/api/chat` — qwen2.5:3b, num_ctx 8192, num_predict 400, temperature 0.3, **keep_alive 0**
+- délais mesurés : résumé ~72 s, question ~59 s (CPU uniquement)
+- l'interface (bouton 🤖 IA + panneau) appelle `/ia` en JS et affiche la réponse, le modèle utilisé et le temps de réponse
 
 ### Garde-fous
 | Risque | Protection |
