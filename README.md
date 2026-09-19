@@ -5,7 +5,7 @@ Service web sur **https://nav.rennesdev.fr** : un « navigateur » minimaliste o
 ## Feuille de route
 
 - **v1 (ceci)** : navigateur simple et léger. Le contenu des pages passe par le serveur.
-- **v2 (branche `v2-assistant-ia`, 19/09) : assistant IA intégré** ✅ — bouton **🤖 IA** dans la barre du lecteur → panneau « Résumer la page » / question libre → réponse de **qwen2.5:3b en local** (Ollama, réseau Docker `apps`). La page est lue **côté serveur** (cache mémoire 15 min) : l'IA voit directement le contenu, plus besoin de copier-coller — c'est la limite d'ÉCLAIREUR que Nav corrige. `keep_alive: 0` → le modèle se décharge de la RAM après chaque réponse. Toute l'IA tourne sur le VPS, aucune donnée n'est envoyée sur Internet.
+- **v2 (19/09, fusionnée dans `main`) : assistant IA intégré** ✅ — bouton **🤖 IA** dans la barre du lecteur → panneau « Résumer la page » / question libre → réponse de **qwen2.5:3b en local** (Ollama, réseau Docker `apps`). La page est lue **côté serveur** (cache mémoire 15 min) : l'IA voit directement le contenu, plus besoin de copier-coller — c'est la limite d'ÉCLAIREUR que Nav corrige. `keep_alive: 0` → le modèle se décharge de la RAM après chaque réponse. Toute l'IA tourne sur le VPS, aucune donnée n'est envoyée sur Internet.
 
 ## Architecture
 
@@ -29,7 +29,7 @@ Service web sur **https://nav.rennesdev.fr** : un « navigateur » minimaliste o
 - sélection du contenu : `<article>` sinon `<main>` sinon `<body>` ; titre extrait pour l'historique
 - charset géré (header HTTP + meta, fallback utf-8)
 
-### Endpoint IA (v2, branche `v2-assistant-ia`)
+### Endpoint IA (v2)
 
 - `POST /ia` `{url, question?}` → `{modele, reponse}` ou `{error}` (HTTP 200)
 - la page est récupérée du **cache mémoire** (rempli par `/go`) ou téléchargée à la volée
