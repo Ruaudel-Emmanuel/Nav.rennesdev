@@ -116,6 +116,113 @@ async function litPage(pageUrl) {
   return telecharge(pageUrl, 0);
 }
 
+/* ---------- Assistant IA (v2) ---------- */
+// Cache mémoire des pages vues : évite de re-télécharger la page pour l'IA
+const CACHE = new Map(); // url -> { t, titre, texte }
+const CACHE_TTL = 15 * 60 * 1000; // 15 min
+const CACHE_MAX = 30;
+
+function cacheNettoie() {
+  const now = Date.now();
+  for (const [k, v] of CACHE) if (now - v.t > CACHE_TTL) CACHE.delete(k);
+}
+
+function cacheMets(url, val) {
+  CACHE.set(url, Object.assign({ t: Date.now() }, val));
+  if (CACHE.size > CACHE_MAX) CACHE.delete(CACHE.keys().next().value);
+}
+
+// Texte brut pour l'IA (depuis le HTML déjà nettoyé des balises dangereuses)
+function extraitTexte(html) {
+  let t = html;
+  for (const re of TAGS_SUPPRIMES) t = t.replace(re, ' ');
+  t = t.replace(/<[^>]+>/g, ' ');
+  t = decodeEntites(t);
+  t = t
+    .split('\n')
+    .map((l) => l.replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const MAX_IA = 2500;
+  if (t.length > MAX_IA) t = t.slice(0, MAX_IA) + '\n\n[… texte tronqu\u00e9]';
+  return t;
+}
+
+async function pagePourIa(pageUrl) {
+  cacheNettoie();
+  const hit = CACHE.get(pageUrl);
+  if (hit) return hit;
+  const { buf, ctype } = await litPage(pageUrl);
+  const html = decode(buf, ctype);
+  const { titre } = extrait(html, pageUrl);
+  const texte = extraitTexte(html);
+  if (!texte) throw new Error('Aucun texte exploitable sur cette page');
+  const val = { titre, texte };
+  cacheMets(pageUrl, val);
+  return val;
+}
+
+// Appel de l'IA locale (Ollama, réseau Docker "apps")
+function appelOllama(payload) {
+  return new Promise((resolve, reject) => {
+    const data = JSON.stringify(payload);
+    const req = http.request({
+      host: 'ollama',
+      port: 11434,
+      path: '/api/chat',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+      timeout: 180000,
+    }, (res) => {
+      const chunks = [];
+      let total = 0;
+      res.on('data', (c) => {
+        total += c.length;
+        if (total > 512 * 1024) { req.destroy(); return reject(new Error('Réponse IA trop volumineuse')); }
+        chunks.push(c);
+      });
+      res.on('end', () => {
+        try {
+          const j = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          if (j.error) return reject(new Error(String(j.error)));
+          resolve(j);
+        } catch (e) { reject(new Error('Réponse illisible du modèle local')); }
+      });
+      res.on('error', reject);
+    });
+    req.on('timeout', () => req.destroy(new Error('L\'IA n\'a pas répondu (délai de 3 min dépassé)')));
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+}
+
+const IA_MODELE = 'qwen2.5:3b';
+const IA_SYSTEME = "Tu es l'assistant IA intégré de Nav.rennesdev, un lecteur de pages web. " +
+  "On te fournit le TEXTE D'UNE PAGE WEB (extrait, possiblement tronqué). " +
+  "Réponds en français, uniquement à partir de ce texte, sans inventer. " +
+  "Si l'information demandée n'est pas dans le texte, dis-le clairement. " +
+  "Sois bref : résumé en 5 phrases maximum, réponse directe et courte pour une question.";
+
+function lisCorps(req, limite) {
+  return new Promise((resolve, reject) => {
+    let total = 0;
+    const chunks = [];
+    req.on('data', (c) => {
+      total += c.length;
+      if (total > limite) { req.destroy(); return reject(new Error('Corps de requête trop volumineux')); }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); }
+      catch (e) { reject(new Error('JSON invalide')); }
+    });
+    req.on('error', reject);
+  });
+}
+
 /* ---------- Décodage du corps ---------- */
 function decode(buf, ctype) {
   let charset = /charset=([\w-]+)/i.exec(ctype || '');
@@ -248,6 +355,23 @@ const CSS = `
   .histo .u { color:var(--muted); font-size:.8em; word-break:break-all; }
   .erreur { max-width:640px; margin:14vh auto 0; padding:0 16px; text-align:center; }
   .erreur .code { font-size:2.6em; margin-bottom:8px; }
+  .ia-btn { border-color:var(--link); color:var(--link); font-weight:600; }
+  #ia-voile { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:40; }
+  #ia-panneau { position:fixed; left:0; right:0; bottom:0; z-index:50; background:var(--bar);
+    border-top:2px solid var(--bord); padding:16px; max-height:70vh; overflow:auto;
+    box-shadow:0 -6px 24px rgba(0,0,0,.25); }
+  #ia-panneau .ia-titre { font-weight:600; margin-bottom:10px; display:flex; justify-content:space-between; }
+  #ia-panneau .ia-fermer { cursor:pointer; border:none; background:none; color:var(--muted); font-size:1.2em; }
+  #ia-panneau input[type=text] { width:100%; padding:10px 12px; border:1px solid var(--bord); border-radius:8px;
+    background:var(--bg); color:var(--txt); font-size:15px; margin-bottom:10px; }
+  #ia-panneau .ia-actions { display:flex; gap:8px; }
+  #ia-panneau .ia-actions button { padding:9px 14px; border:1px solid var(--bord); border-radius:8px;
+    background:var(--bg); color:var(--txt); cursor:pointer; }
+  #ia-panneau .ia-actions button:hover { border-color:var(--link); }
+  #ia-statut { color:var(--muted); font-size:.9em; margin-top:10px; min-height:1.2em; }
+  #ia-rep { white-space:pre-wrap; background:var(--bg); border:1px solid var(--bord); border-radius:8px;
+    padding:12px; margin-top:10px; display:none; }
+  #ia-modele { color:var(--muted); font-size:.8em; margin-top:6px; }
 `;
 
 function escHtml(s) {
@@ -315,6 +439,7 @@ function pageLecture(titre, urlOriginal, contenu) {
     "  <button onclick=\"location.href='/'\" title=\"Accueil\">⌂</button>\n" +
     '  <button onclick="history.back()" title="Retour">←</button>\n' +
     '  <form action="/go" method="get"><input type="url" name="url" value="' + escHtml(urlOriginal) + '" placeholder="Nouvelle adresse…"><button type="submit">Aller</button></form>\n' +
+    "  <button id=\"btn-ia\" class=\"ia-btn\" title=\"Demander \u00e0 l\u2019IA\">\ud83e\udd16 IA</button>\n" +
     '  <a href="' + escHtml(urlOriginal) + '" target="_blank" rel="noopener" title="Ouvrir l\'original"><button>Original</button></a>\n' +
     '</div>\n' +
     '<div class="page">\n' +
@@ -331,7 +456,63 @@ function pageLecture(titre, urlOriginal, contenu) {
     "    localStorage.setItem('nav-historique', JSON.stringify(liste.slice(0, 50)));\n" +
     '  } catch(e){}\n' +
     '})();\n' +
-    '</script></body></html>';
+    '</script>\n' +
+    '  <div id="ia-voile" hidden></div>\n' +
+    '  <div id="ia-panneau" hidden>\n' +
+    '    <div class="ia-titre"><span>🤖 Assistant IA — local (Ollama)</span><button class="ia-fermer" id="ia-fermer" title="Fermer">✕</button></div>\n' +
+    '    <input type="text" id="ia-question" placeholder="Ta question sur cette page (optionnel)…">\n' +
+    '    <div class="ia-actions">\n' +
+    '      <button id="ia-resumer">Résumer la page</button>\n' +
+    '      <button id="ia-demander">Demander</button>\n' +
+    '    </div>\n' +
+    '    <div id="ia-statut"></div>\n' +
+    '    <div id="ia-rep"></div>\n' +
+    '    <div id="ia-modele" class="modele"></div>\n' +
+    '  </div>\n' +
+    '  <script>\n' +
+    '  (function(){\n' +
+    '    const url = ' + JSON.stringify(urlOriginal) + ';\n' +
+    '    const voile = document.getElementById("ia-voile");\n' +
+    '    const panneau = document.getElementById("ia-panneau");\n' +
+    '    const statut = document.getElementById("ia-statut");\n' +
+    '    const rep = document.getElementById("ia-rep");\n' +
+    '    const repModele = document.getElementById("ia-modele");\n' +
+    '    const champQ = document.getElementById("ia-question");\n' +
+    '    let enCours = false;\n' +
+    '    function ouvre() { voile.hidden = false; panneau.hidden = false; if (!enCours) statut.textContent = ""; }\n' +
+    '    function ferme() { voile.hidden = true; panneau.hidden = true; }\n' +
+    '    document.getElementById("btn-ia").addEventListener("click", ouvre);\n' +
+    '    document.getElementById("ia-fermer").addEventListener("click", ferme);\n' +
+    '    voile.addEventListener("click", ferme);\n' +
+    '    champQ.addEventListener("keydown", function(e) { if (e.key === "Enter") demande(champQ.value.trim()); });\n' +
+    '    function montre(msg) { rep.style.display = "block"; rep.textContent = msg; }\n' +
+    '    async function demande(question) {\n' +
+    '      if (enCours) return;\n' +
+    '      enCours = true;\n' +
+    '      repModele.textContent = "";\n' +
+    '      montre(question ? "Question : " + question : "");\n' +
+    '      statut.textContent = "\u23f3 IA locale en cours… (10 \u00e0 90 s sur le CPU du VPS)";\n' +
+    '      const debut = Date.now();\n' +
+    '      try {\n' +
+    '        const r = await fetch("/ia", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url, question: question || "" }) });\n' +
+    '        const j = await r.json();\n' +
+    '        if (j.error) { statut.textContent = "\u26a0\ufe0f " + j.error; }\n' +
+    '        else {\n' +
+    '          const secs = Math.round((Date.now() - debut) / 1000);\n' +
+    '          montre(j.reponse || "(r\u00e9ponse vide)");\n' +
+    '          statut.textContent = "\u2705 R\u00e9ponse en " + secs + " s";\n' +
+    '          repModele.textContent = "Mod\u00e8le : " + (j.modele || "?") + " \u2014 IA locale, aucune donn\u00e9e envoy\u00e9e sur Internet";\n' +
+    '        }\n' +
+    '      } catch (e) {\n' +
+    '        statut.textContent = "\u26a0\ufe0f Erreur : " + e;\n' +
+    '      }\n' +
+    '      enCours = false;\n' +
+    '    }\n' +
+    '    document.getElementById("ia-resumer").addEventListener("click", function() { demande(""); });\n' +
+    '    document.getElementById("ia-demander").addEventListener("click", function() { demande(champQ.value.trim()); });\n' +
+    '  })();\n' +
+    '</script>\n' +
+    '</body></html>';
 }
 
 function pageErreur(message, urlDemandee) {
@@ -374,6 +555,37 @@ const serveur = http.createServer(async (req, res) => {
     } catch (e) {
       const msg = e && e.message ? e.message : 'Erreur inconnue';
       return repond(res, 200, 'text/html; charset=utf-8', pageErreur(msg, cible));
+    }
+  }
+
+  if (me.pathname === '/ia' && req.method === 'POST') {
+    try {
+      const corps = await lisCorps(req, 16 * 1024);
+      const cible = String(corps.url || '').trim();
+      const question = String(corps.question || '').trim().slice(0, 500);
+      if (!/^https?:\/\//i.test(cible)) {
+        return repond(res, 200, 'application/json; charset=utf-8', JSON.stringify({ error: 'URL manquante ou non http(s)' }));
+      }
+      const page = await pagePourIa(cible);
+      const consigne = question
+        ? 'Voici une page web et une question. Réponds à la question en te basant sur la page.\n\nQUESTION : ' + question
+        : 'Voici une page web. Fais-en un résumé clair et concis en français.';
+      const user = consigne + '\n\nPAGE : ' + cible + '\n\nTEXTE DE LA PAGE :\n' + page.texte;
+      const j = await appelOllama({
+        model: IA_MODELE,
+        stream: false,
+        keep_alive: 0, // décharge immédiat : l'IA ne reste pas en RAM entre deux demandes
+        options: { num_ctx: 8192, temperature: 0.3, num_predict: 400 },
+        messages: [
+          { role: 'system', content: IA_SYSTEME },
+          { role: 'user', content: user },
+        ],
+      });
+      const reponse = (j.message || {}).content || '';
+      return repond(res, 200, 'application/json; charset=utf-8', JSON.stringify({ modele: j.model || IA_MODELE, reponse }));
+    } catch (e) {
+      const msg = e && e.message ? e.message : 'Erreur inconnue';
+      return repond(res, 200, 'application/json; charset=utf-8', JSON.stringify({ error: msg }));
     }
   }
 
