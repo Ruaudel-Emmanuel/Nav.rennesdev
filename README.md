@@ -73,5 +73,7 @@ sudo cat /etc/caddy/nav-auth.txt
 - unitaires `decodeEntites` / `escHtml` / `escText` ✅
 - HTTPS via Cloudflare : 401 sans auth / 200 avec auth ✅
 
+---
+
 Emmanuel Ruaudel — Directeur de la Transformation Numérique pour TPE/PME. J'aide les dirigeants à libérer 5 à 10 h par semaine en automatisant leurs tâches répétitives (n8n · Python · IA locale). — Ce service illustre l'IA 100 % locale que je déploie : résumé et question à un document, sans qu'aucune donnée ne quitte le serveur.
 📧 ruaudel.emmanuel@orange.fr · 🌐 rennesdev.fr
