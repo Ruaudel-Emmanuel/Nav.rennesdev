@@ -1,11 +1,5 @@
 # Nav.rennesdev — navigateur web léger côté VPS (v1)
 
-Offre :
-
- Ce service illustre l'IA 100 % locale que je déploie : résumé et question à un document, sans qu'aucune donnée ne quitte le serveur. 
-
-Service web sur **https://nav.rennesdev.fr** : un « navigateur » minimaliste où c'est **le VPS qui charge les pages**. Barre d'adresse → le VPS télécharge la page, la nettoie (scripts supprimés, tracking réduit) et la sert en **mode lecture** ; les liens restent cliquables et sont **routés par le VPS** (navigation de page en page).
-
 ## Feuille de route
 
 - **v1 (ceci)** : navigateur simple et léger. Le contenu des pages passe par le serveur.
@@ -78,3 +72,6 @@ sudo cat /etc/caddy/nav-auth.txt
 - erreurs propres : DNS inconnu, HTTP 404, contenu non HTML (image), protocole interdit, SSRF (127.0.0.1 / IP Tailscale bloquées) ✅
 - unitaires `decodeEntites` / `escHtml` / `escText` ✅
 - HTTPS via Cloudflare : 401 sans auth / 200 avec auth ✅
+
+Emmanuel Ruaudel — Directeur de la Transformation Numérique pour TPE/PME. J'aide les dirigeants à libérer 5 à 10 h par semaine en automatisant leurs tâches répétitives (n8n · Python · IA locale). — Ce service illustre l'IA 100 % locale que je déploie : résumé et question à un document, sans qu'aucune donnée ne quitte le serveur.
+📧 ruaudel.emmanuel@orange.fr · 🌐 rennesdev.fr
