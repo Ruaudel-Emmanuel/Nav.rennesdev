@@ -1,5 +1,9 @@
 # Nav.rennesdev — navigateur web léger côté VPS (v1)
 
+Offre :
+
+ Ce service illustre l'IA 100 % locale que je déploie : résumé et question à un document, sans qu'aucune donnée ne quitte le serveur. 
+
 Service web sur **https://nav.rennesdev.fr** : un « navigateur » minimaliste où c'est **le VPS qui charge les pages**. Barre d'adresse → le VPS télécharge la page, la nettoie (scripts supprimés, tracking réduit) et la sert en **mode lecture** ; les liens restent cliquables et sont **routés par le VPS** (navigation de page en page).
 
 ## Feuille de route
