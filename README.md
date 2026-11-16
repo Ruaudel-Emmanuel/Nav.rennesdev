@@ -3,7 +3,7 @@
 ## Feuille de route
 
 - **v1 (ceci)** : navigateur simple et léger. Le contenu des pages passe par le serveur.
-- **v2 (19/09, fusionnée dans `main`) : assistant IA intégré** ✅ — bouton **🤖 IA** dans la barre du lecteur → panneau « Résumer la page » / question libre → réponse de **qwen2.5:3b en local** (Ollama, réseau Docker `apps`). La page est lue **côté serveur** (cache mémoire 15 min) : l'IA voit directement le contenu, plus besoin de copier-coller — c'est la limite d'ÉCLAIREUR que Nav corrige. `keep_alive: 0` → le modèle se décharge de la RAM après chaque réponse. Toute l'IA tourne sur le VPS, aucune donnée n'est envoyée sur Internet.
+- **v2 (19/09, fusionnée dans `main`) : assistant IA intégré** ✅ — bouton **🤖 IA** dans la barre du lecteur → panneau « Résumer la page » / question libre → réponse de API Mistral. La page est lue **côté serveur** (cache mémoire 15 min) : l'IA voit directement le contenu, plus besoin de copier-coller — c'est la limite d'ÉCLAIREUR que Nav corrige. `keep_alive: 0` → le modèle se décharge de la RAM après chaque réponse. Toute l'IA tourne sur le VPS, aucune donnée n'est envoyée sur Internet.
 
 ## Architecture
 
@@ -12,7 +12,6 @@
 | Frontal | Caddy (service host) — vhost `nav.rennesdev.fr` (basic auth, credentials `/etc/caddy/nav-auth.txt` root 600) → reverse_proxy `127.0.0.1:8086` |
 | Service | conteneur `nav_rennesdev` (`node:22-alpine`, zéro dépendance npm) — `~/projects/Nav.rennesdev/docker-compose.yml`, port 127.0.0.1:8086 |
 | App | `app/server.js` (un seul fichier) |
-| Réseau | Docker `apps` (pour brancher Ollama à la v2) |
 
 ## Fonctionnement
 
@@ -32,7 +31,6 @@
 - `POST /ia` `{url, question?}` → `{modele, reponse}` ou `{error}` (HTTP 200)
 - la page est récupérée du **cache mémoire** (rempli par `/go`) ou téléchargée à la volée
 - texte extrait : 2500 caractères max (tronqué), charset géré
-- Ollama `http://ollama:11434/api/chat` — qwen2.5:3b, num_ctx 8192, num_predict 400, temperature 0.3, **keep_alive 0**
 - délais mesurés : résumé ~72 s, question ~59 s (CPU uniquement)
 - l'interface (bouton 🤖 IA + panneau) appelle `/ia` en JS et affiche la réponse, le modèle utilisé et le temps de réponse
 
